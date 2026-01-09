@@ -1,0 +1,1 @@
+print("Email Assistant project setup successful")
