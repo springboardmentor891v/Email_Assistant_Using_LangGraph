@@ -1,0 +1,43 @@
+There are 6 key concepts:
+
+1. Proactive Triage
+       -Automatically identifies important tasks
+       -Prioritizes urgent actions
+       -Does not wait for user commands
+       -Reduces workload
+       -Saves time
+
+2. Persistent Memory
+       -Stores past information
+       -Remembers user preferences
+       -Maintains context
+       -Avoids repetition
+       -Improves personalization
+
+3. True Autonomy via Human-in-the-Loop
+       -System works independently
+       -Human approval for critical decisions
+       -Humans can correct actions
+       -Ensures safety
+       -Builds trust
+
+4. Robustness via Evaluation
+       -System is tested regularly
+       -Performance is measured
+       -Errors are detected
+       -Improves reliability
+       -Ensures consistent behavior
+
+5. Real-World Deployment
+       -Implemented in real environments
+       -Works with real users
+       -Handles real data
+       -Requires scalability
+       -Shows practical usefulness
+
+6. Developing a User Interface
+       -Allows user interaction
+       -Can be chat or dashboard
+       -Should be simple and clear
+       -Improves usability
+       -Enhances user experience
