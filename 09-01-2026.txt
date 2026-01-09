@@ -1,0 +1,35 @@
+Reactive bot-
+fast
+simple
+responds only to current command
+uses ML
+Proactive bot-
+considers previous history and it will give output
+slow
+complex as it has to handle previous history and plan
+Ambient agent-> proactive agent
+
+Proactive triage
+it will filter even before notifying user about email
+high speed filter
+read & decide the workflow
+
+Buckets-based on urgency of email
+
+Persistent memory
+database of preferences and feedback provided to chatbot
+
+True Autonomy via human in the loop
+classified into safe tools and unsafe tools
+
+Robustness via evaluation
+test the model in many ways(evaluations)
+
+Real-world deployment
+integrating with gmail account
+useful for daily use
+
+Developing an user interface
+acts as a bridge
+allows the user to view the memory of agent and make modifications if needed.
+
