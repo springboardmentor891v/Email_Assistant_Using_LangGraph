@@ -1,2 +1,5 @@
 .env
 notebooks/.env
+.gitignore
+*.json
+notebooks/contents/
