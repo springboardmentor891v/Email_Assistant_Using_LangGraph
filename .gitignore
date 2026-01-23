@@ -32,3 +32,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Test and temporary files
+test_model.py
+list_models.py
+models_list.txt
+test_output.txt
+output.txt
+app/test_output.txt
