@@ -1,0 +1,94 @@
+
+======================================================================
+                    EMAIL ASSISTANT DEMO
+======================================================================
+
+============================================================
+EMAIL AGENT WORKFLOW GRAPH
+============================================================
+
+    START
+      ↓
+    [TRIAGE]
+      ↓
+    Decision Routing
+      ├─ ignore → [IGNORE] → END
+      ├─ notify_human → [HITL] → END
+      └─ respond_act → [REACT] → END
+    
+============================================================
+
+
+######################################################################
+# TEST EMAIL 1/4
+######################################################################
+
+Subject: Limited Time Offer!!!
+Body: Buy one get one free. Offer valid today. Click here now!
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-1.5-pro-latest' (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+
+
+######################################################################
+# TEST EMAIL 2/4
+######################################################################
+
+Subject: Meeting Request for Tomorrow
+Body: Hi, can we schedule a meeting tomorrow at 2 PM to discuss the Q1 project roadmap? Let me know if you're available.
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-1.5-pro-latest' (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+
+
+######################################################################
+# TEST EMAIL 3/4
+######################################################################
+
+Subject: Invoice approval required
+Body: Please review and approve the attached invoice for $5,000. This requires your authorization before we can proceed with payment.
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-1.5-pro-latest' (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+
+
+######################################################################
+# TEST EMAIL 4/4
+######################################################################
+
+Subject: Quick question about calendar
+Body: Do you have any availability next week? I'd like to set up a brief call to discuss the new feature requirements.
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-1.5-pro-latest' (NOT_FOUND): 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+
+
+======================================================================
+✓ All test emails processed!
+======================================================================
+
+Output saved to: test_output.txt
+
+To view traces and monitoring:
+1. Sign up at https://smith.langchain.com/
+2. Add your LANGCHAIN_API_KEY to .env
+3. Set LANGCHAIN_TRACING_V2=true in .env
+4. Re-run this script to see traces in LangSmith dashboard
+======================================================================
+

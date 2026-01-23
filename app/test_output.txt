@@ -1,0 +1,111 @@
+
+======================================================================
+                    EMAIL ASSISTANT DEMO
+======================================================================
+
+============================================================
+EMAIL AGENT WORKFLOW GRAPH
+============================================================
+
+    START
+      ↓
+    [TRIAGE]
+      ↓
+    Decision Routing
+      ├─ ignore → [IGNORE] → END
+      ├─ notify_human → [HITL] → END
+      └─ respond_act → [REACT] → END
+    
+============================================================
+
+
+######################################################################
+# TEST EMAIL 1/4
+######################################################################
+
+Subject: Limited Time Offer!!!
+Body: Buy one get one free. Offer valid today. Click here now!
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+Decision: ignore
+============================================================
+
+
+============================================================
+🗑️ IGNORE NODE
+============================================================
+Email marked as spam/promotional - no action taken
+============================================================
+
+
+======================================================================
+RESULTS:
+======================================================================
+Triage Decision: ignore
+
+Final Output:
+Email 'Limited Time Offer!!!' has been marked as spam/promotional and will be ignored.
+======================================================================
+
+
+######################################################################
+# TEST EMAIL 2/4
+######################################################################
+
+Subject: Meeting Request for Tomorrow
+Body: Hi, can we schedule a meeting tomorrow at 2 PM to discuss the Q1 project roadmap? Let me know if you're available.
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-2.5-flash' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 32.972042789s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '32s'}]}}
+
+
+######################################################################
+# TEST EMAIL 3/4
+######################################################################
+
+Subject: Invoice approval required
+Body: Please review and approve the attached invoice for $5,000. This requires your authorization before we can proceed with payment.
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-2.5-flash' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 57.47116399s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '57s'}]}}
+
+
+######################################################################
+# TEST EMAIL 4/4
+######################################################################
+
+Subject: Quick question about calendar
+Body: Do you have any availability next week? I'd like to set up a brief call to discuss the new feature requirements.
+
+
+============================================================
+🔍 TRIAGE NODE
+============================================================
+
+❌ Error processing email: Error calling model 'gemini-2.5-flash' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 22.493725817s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '22s'}]}}
+
+
+======================================================================
+✓ All test emails processed!
+======================================================================
+
+Output saved to: test_output.txt
+
+To view traces and monitoring:
+1. Sign up at https://smith.langchain.com/
+2. Add your LANGCHAIN_API_KEY to .env
+3. Set LANGCHAIN_TRACING_V2=true in .env
+4. Re-run this script to see traces in LangSmith dashboard
+======================================================================
+

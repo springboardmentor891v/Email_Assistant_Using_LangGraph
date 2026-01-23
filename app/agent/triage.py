@@ -1,14 +1,15 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-import os
+from langchain_core.prompts import PromptTemplate
 
 # Initialize Gemini LLM
 llm = ChatGoogleGenerativeAI(
-    model="gemini-pro",
+    model="gemini-1.5-pro-latest",
     temperature=0
 )
 
-# Triage prompt
 triage_prompt = PromptTemplate(
     input_variables=["subject", "body"],
     template="""
@@ -32,13 +33,9 @@ ignore OR notify_human OR respond_act
 )
 
 def triage_email(subject: str, body: str) -> str:
-    """
-    Classifies email into ignore, notify_human, or respond_act
-    """
     chain = triage_prompt | llm
     response = chain.invoke({
         "subject": subject,
         "body": body
     })
-
     return response.content.strip().lower()
