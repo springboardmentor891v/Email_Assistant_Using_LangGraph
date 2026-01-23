@@ -29,7 +29,7 @@ load_dotenv()
 
 # Initialize LLM for reasoning
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-pro-latest",
+    model="gemini-2.5-flash-lite",
     temperature=0.3
 )
 
