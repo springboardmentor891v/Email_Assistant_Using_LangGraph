@@ -2,4 +2,5 @@
 notebooks/.env
 .gitignore
 *.json
-notebooks/contents/
+*contents/
+requirements.txt
