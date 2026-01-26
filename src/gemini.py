@@ -9,11 +9,11 @@ base_dir = Path(__file__).resolve().parent.parent
 dotenv_path = base_dir / '.env'
 load_dotenv(dotenv_path=dotenv_path)
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY1"))
 
 def llm_call(prompt: str) -> str:
     response = client.models.generate_content(
-        model="gemini-2.5-flash", 
+        model="gemini-2.5-flash-lite", 
         contents=prompt,
         config=types.GenerateContentConfig(
             # It forces the model to output raw JSON only

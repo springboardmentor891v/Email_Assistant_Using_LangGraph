@@ -1,6 +1,39 @@
 import json
 from src.gemini import llm_call, generate_structured_json
-from src.tools import add_event, delete_event, check_avaliability
+from src.tools import add_event, delete_event, send_email, check_availability
+from src.db import MemoryManager
+
+memory = MemoryManager()
+
+def learn_from_feedback(feedback_text):
+    """
+    Uses LLM to distill raw feedback into a reusable rule.
+    """
+    prompt = f"""
+    Analyze this user feedback: "{feedback_text}"
+    
+    Does this contain a general preference or rule for future emails?
+    If yes, extract it as a short Key-Value pair.
+    
+    Examples:
+    - "Don't use 'Dear' anymore" -> Key: "Greeting", Value: "Do not use 'Dear'"
+    - "I'm always busy on Mondays" -> Key: "Schedule", Value: "Busy on Mondays"
+    
+    Return ONLY valid JSON: {{ "key": "...", "value": "..." }}
+    If no general rule exists, return {{ "key": "NONE", "value": "" }}
+    """
+    
+    try:
+        # We assume llm_call is available or use self.client.generate_content
+        response = llm_call(prompt) 
+        data = json.loads(response.replace("```json", "").replace("```", ""))
+        
+        if data["key"] != "NONE":
+            memory.save_preference(data["key"], data["value"])
+            return f"Learned: {data['key']} -> {data['value']}"
+    except Exception as e:
+        print(f"Learning failed: {e}")
+    return ""
 
 def traige_email(email_text: str) -> str:
     prompt = f"""
@@ -67,8 +100,10 @@ def create_draft_reply(gmail_service, calendar_service, sender: str, subject: st
         else:
             calendar_context = "You are FREE at this time."
 
-    current_feedback = ""
     
+    user_preferences = memory.get_all_preferences()
+    current_feedback = ""
+
     while True:
         prompt = f"""
         You are a professional Email Assistant for Sanjay Sanapala.
@@ -81,6 +116,9 @@ def create_draft_reply(gmail_service, calendar_service, sender: str, subject: st
 
         ### CALENDAR CONTEXT:
         {calendar_context}
+
+        ### LONG-TERM MEMORY (USER PREFERENCES):
+        {user_preferences}
         
         ### USER FEEDBACK / ADJUSTMENTS:
         {current_feedback if current_feedback else "None (Draft the initial reply)"}
@@ -112,10 +150,22 @@ def create_draft_reply(gmail_service, calendar_service, sender: str, subject: st
         user_choice = input("Action (yes / no / replace / [type feedback]): ").strip().lower()
 
         if user_choice in ["yes", "y"]:
-            print(f"📅 Adding event: 'Meeting with {sender}'...")
-            add_event(calendar_service, f"Meeting with {sender}", event_time)
+            if event_time != "NONE" and is_free and not event_already_scheduled:
+                print(f"📅 Adding event to calendar...")
+                # Assuming you passed calendar_tools to this function
+                add_event(calendar_service, f"Meeting with {sender}", event_time)
+
+            # B. Send Logic
+            print(f"📨 Sending email to {reply_data['To']}...")
             
-            print("Success: Draft Created & Calendar Updated." ) 
+            send_email(
+                service=gmail_service,
+                recipient=reply_data['To'], 
+                subject=reply_data['Subject'], 
+                body=reply_data['Body']
+            )
+
+            return "Success: Email Sent & Calendar Updated."
         # --- 2. HANDLE REPLACEMENT (REPLACE) ---
         elif "replace" in user_choice:
             # Check if there is actually a conflict to replace
@@ -145,4 +195,8 @@ def create_draft_reply(gmail_service, calendar_service, sender: str, subject: st
         # --- 4. HANDLE FEEDBACK (EVERYTHING ELSE) ---
         else:
             print("Refining draft based on feedback...")
+            learning_result = learn_from_feedback(user_choice)
+            if learning_result:
+                print(f"{learning_result}")
+                user_preferences = memory.get_all_preferences()
             current_feedback += f"\n- User requested change: {user_choice}"

@@ -8,7 +8,6 @@ calendar_service = build('calendar', 'v3', credentials=creds)
 gmail_service = build('gmail', 'v1', credentials=creds)
 
 # ---------------- Calendar Tools
-# Calendar Tools
 import datetime
 
 def ensure_timezone(iso_time):
@@ -88,7 +87,14 @@ def delete_event(service, event_id):
         return False
 
 
+
+
 # -------------------- Email tools
+
+import base64
+from email.mime.text import MIMEText
+from googleapiclient.errors import HttpError
+
 def fetch_recent_emails(service, max_results=5):
     """
     Fetch the recent emails.
@@ -111,9 +117,6 @@ def fetch_recent_emails(service, max_results=5):
         full_email_objects.append(message) 
 
     return full_email_objects
-
-import base64
-from typing import TypedDict, List, Dict, Any
 
 def extract_body(payload: dict) -> str:
     """
@@ -159,6 +162,25 @@ def extract_email_parts(message: dict):
 
 def format_email_for_llm(sender, subject, body):
     return f"Sender: {sender}\nSubject: {subject}\n\nBody:\n{body}\n".strip()
+
+def send_email(service, recipient, subject, body):
+        """Sends the email immediately."""
+        try:
+            message = MIMEText(body)
+            message['to'] = recipient
+            message['subject'] = subject
+            
+            # Encode the message
+            raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+            body = {'raw': raw}
+            
+            # Call Gmail API 'send' endpoint
+            sent_message = service.users().messages().send(userId="me", body=body).execute()
+            print(f"🚀 Email Sent! Message Id: {sent_message['id']}")
+            return sent_message
+        except HttpError as error:
+            print(f"An error occurred sending email: {error}")
+            return None
 
 def search_gmail(service, query, get_all=False, max_results=5):
     """
