@@ -1,4 +1,5 @@
+.env
 token.json
 credentials.json
+memory.db
 __pycache__/
-.env

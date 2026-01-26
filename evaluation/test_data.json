@@ -1,0 +1,10 @@
+[
+  {
+    "email": "Can we meet tomorrow at 3 PM?",
+    "expected_action": "respond"
+  },
+  {
+    "email": "Your OTP is 123456",
+    "expected_action": "ignore"
+  }
+]
