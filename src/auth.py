@@ -35,6 +35,14 @@ def authenticate_google():
 
     return creds
 
+def get_gmail_service():
+    creds = authenticate_google()
+    return build('gmail', 'v1', credentials=creds)
+
+def get_calendar_service():
+    creds = authenticate_google()
+    return build('calendar', 'v3', credentials=creds)
+
 service = build('gmail', 'v1', credentials=authenticate_google())
 
 # Check if gmail is connected

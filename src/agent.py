@@ -1,5 +1,6 @@
 import json
 from src.gemini import llm_call, generate_structured_json
+from src.tools import add_event, delete_event, check_avaliability
 
 def traige_email(email_text: str) -> str:
     prompt = f"""
@@ -25,8 +26,47 @@ def traige_email(email_text: str) -> str:
 
 from email.mime.text import MIMEText
 import json
+from datetime import datetime as dt
 
-def create_draft_reply(service, sender: str, subject: str, body: str) -> str:
+def create_draft_reply(gmail_service, calendar_service, sender: str, subject: str, body: str) -> str:
+
+    # Extract Event Time ---
+    now = dt.now()
+    current_date_str = now.strftime("%A, %B %d, %Y") # e.g., "Monday, January 26, 2026"
+    current_year = now.year
+
+    time_prompt = f"""
+    Context: Today is {current_date_str}.
+    
+    Task: Extract the event start time from the email below.
+    - If a date (like "28 Jan") is mentioned without a year, assume the year is {current_year}.
+    - Convert the time to ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
+    - If NO specific time is found, return exactly 'NONE'.
+    
+    Email Body:
+    "{body}"
+    
+    Return ONLY the ISO string or 'NONE'. No markdown, no quotes.
+    """
+    event_time = llm_call(time_prompt).strip().replace('"', '').replace("'", "")
+    
+    # Check Availability
+    calendar_context = "No specific time mentioned in email."
+    conflict_event = None
+    is_free = True
+    event_already_scheduled = False # Flag to prevent double-booking on 'replace'
+
+    if event_time != "NONE" and "T" in event_time:
+        print(f"\n📅 Detected Event Time: {event_time}")
+        availability = check_availability(calendar_service, event_time)
+        
+        if availability["status"] == "BUSY":
+            is_free = False
+            conflict_event = availability["event"]
+            calendar_context = f"WARNING: You are BUSY at this time. Conflicting Event: '{conflict_event['summary']}' (ID: {conflict_event['id']})."
+        else:
+            calendar_context = "You are FREE at this time."
+
     current_feedback = ""
     
     while True:
@@ -38,6 +78,9 @@ def create_draft_reply(service, sender: str, subject: str, body: str) -> str:
         - Sender: {sender}
         - Original Subject: {subject}
         - Original Body: {body}
+
+        ### CALENDAR CONTEXT:
+        {calendar_context}
         
         ### USER FEEDBACK / ADJUSTMENTS:
         {current_feedback if current_feedback else "None (Draft the initial reply)"}
@@ -66,14 +109,40 @@ def create_draft_reply(service, sender: str, subject: str, body: str) -> str:
 
         print(f"\nDRAFT PREVIEW:\nTo: {reply_data['To']}\nSubject: {reply_data['Subject']}\nBody:\n{reply_data['Body']}\n")
         
-        user_choice = input("Action (yes / no / [type feedback]): ").strip().lower()
+        user_choice = input("Action (yes / no / replace / [type feedback]): ").strip().lower()
 
         if user_choice in ["yes", "y"]:
-            # create_gmail_draft(service, reply_data["To"], reply_data["Subject"], reply_data["Body"])
-            return "Success: Draft Created."    
+            print(f"📅 Adding event: 'Meeting with {sender}'...")
+            add_event(calendar_service, f"Meeting with {sender}", event_time)
+            
+            print("Success: Draft Created & Calendar Updated." ) 
+        # --- 2. HANDLE REPLACEMENT (REPLACE) ---
+        elif "replace" in user_choice:
+            # Check if there is actually a conflict to replace
+            if conflict_event:
+                print(f"🔄 Replacing conflicting event: '{conflict_event['summary']}'...")
+                
+                delete_event(calendar_service, conflict_event['id'])
+                add_event(calendar_service, f"Meeting with {sender}", event_time)
+                
+                event_already_scheduled = True 
+                is_free = True 
+                conflict_event = None
+                
+                calendar_context = "Availability: FREE (User manually cleared the previous conflict). You MUST ACCEPT the invitation now."
+                current_feedback += " I have cleared the calendar conflict. Rewrite the email to ACCEPT the invitation."
+                
+                print("Event swapped. Regenerating draft with acceptance...")
+            
+            else:
+                print("⚠️ No conflicting event found to replace. (Calendar is already free or no time detected).")
+
+        # --- 3. HANDLE CANCELLATION (NO) ---
         elif user_choice in ["no", "n"]:
             print("Operation cancelled.")
             return "Cancelled."
+
+        # --- 4. HANDLE FEEDBACK (EVERYTHING ELSE) ---
         else:
             print("Refining draft based on feedback...")
             current_feedback += f"\n- User requested change: {user_choice}"
