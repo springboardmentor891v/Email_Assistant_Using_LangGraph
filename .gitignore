@@ -3,6 +3,7 @@
 
 # Google credentials
 credential.json
+credentials1.json
 
 # Virtual environment
 venv/
