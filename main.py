@@ -169,9 +169,9 @@ def generate_reply(email, events) -> str:
                 break
 
     if conflict:
-        return "Dear client, I have another meeting at that time. Can we reschedule?"
+        return "Dear, I am busy at that time. Can we reschedule?"
     else:
-        return "Dear client, I am available. Let's schedule at your suggested time."
+        return "Dear, I am available. Let's schedule at your suggested time."
 
 # ---------------- STREAMLIT UI ----------------
 def launch_ui(emails, events):
