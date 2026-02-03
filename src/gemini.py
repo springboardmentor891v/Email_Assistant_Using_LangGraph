@@ -13,7 +13,7 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY1"))
 
 def llm_call(prompt: str) -> str:
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite", 
+        model="gemini-2.5-flash", 
         contents=prompt,
         config=types.GenerateContentConfig(
             # It forces the model to output raw JSON only

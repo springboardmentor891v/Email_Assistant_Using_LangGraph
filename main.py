@@ -7,7 +7,7 @@ calendar_service = get_calendar_service()
 gmail_service = get_gmail_service()
 
 if __name__ == "__main__":
-    messages = fetch_recent_emails(gmail_service, 1)
+    messages = fetch_recent_emails(gmail_service, 2)
 
     for msg in messages:
         sender, subject, body = extract_email_parts(msg)

@@ -4,3 +4,4 @@ notebooks/.env
 *.json
 *contents/
 requirements.txt
+src/groq_llm.py

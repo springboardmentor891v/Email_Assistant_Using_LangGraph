@@ -1,7 +1,10 @@
 import json
-from src.gemini import llm_call, generate_structured_json
+from src.gemini import llm_call
+# from src.groq_llm import llm_call_1
 from src.tools import add_event, delete_event, send_email, check_availability
 from src.db import MemoryManager
+from datetime import datetime
+from langsmith import traceable
 
 memory = MemoryManager()
 
@@ -35,6 +38,7 @@ def learn_from_feedback(feedback_text):
         print(f"Learning failed: {e}")
     return ""
 
+@traceable(name="triage")
 def traige_email(email_text: str) -> str:
     prompt = f"""
     You are an expert AI Executive Assistant.
@@ -61,24 +65,32 @@ from email.mime.text import MIMEText
 import json
 from datetime import datetime as dt
 
+
 def create_draft_reply(gmail_service, calendar_service, sender: str, subject: str, body: str) -> str:
 
     # Extract Event Time ---
     now = dt.now()
-    current_date_str = now.strftime("%A, %B %d, %Y") # e.g., "Monday, January 26, 2026"
-    current_year = now.year
-
+    # We provide Day Name and Time so it understands "Next Friday" or "Tonight"
+    current_context = now.strftime("%A, %B %d, %Y at %H:%M") 
+    
     time_prompt = f"""
-    Context: Today is {current_date_str}.
-    
-    Task: Extract the event start time from the email below.
-    - If a date (like "28 Jan") is mentioned without a year, assume the year is {current_year}.
-    - Convert the time to ISO 8601 format (YYYY-MM-DDTHH:MM:SS).
-    - If NO specific time is found, return exactly 'NONE'.
-    
-    Email Body:
+    ### Role
+    You are an expert Executive Assistant. Your task is to extract the **Event Start Time** from an email.
+
+    ### Current Context (Anchor Time)
+    Today is: {current_context}
+    (Use this anchor to resolve relative dates like "tomorrow", "next Friday", or "in 2 days")
+
+    ### Extraction Rules
+    1. **Year Inference:** If the email mentions a date (e.g., "Jan 5") that has already passed relative to 'Today', assume it refers to the **next occurrence** (next year).
+    2. **Time Inference:** - If a time is mentioned without AM/PM (e.g., "at 2"), infer the most likely time based on context (e.g., business meetings are usually 2 PM, dinner is 7 PM).
+       - If no specific time is found but a date is present, default to 09:00:00 (Start of day) but mark it as approximate.
+    3. **Timezones:** If a timezone is specified (EST, IST, GMT), convert it to UTC if possible, otherwise keep the local time and ignore the offset.
+
+    ### Email Body
     "{body}"
-    
+
+    ### Output Format
     Return ONLY the ISO string or 'NONE'. No markdown, no quotes.
     """
     event_time = llm_call(time_prompt).strip().replace('"', '').replace("'", "")
@@ -200,3 +212,109 @@ def create_draft_reply(gmail_service, calendar_service, sender: str, subject: st
                 print(f"{learning_result}")
                 user_preferences = memory.get_all_preferences()
             current_feedback += f"\n- User requested change: {user_choice}"
+
+@traceable(name="notify")
+def process_notify(sender: str, subject: str, body: str):
+    """Processes the Notification and gives a short summary or finds important events"""
+    
+    now = datetime.now()
+    current_context = now.strftime("%A, %B %d, %Y at %H:%M")
+
+    prompt = f"""
+    ### Role
+    You are an expert Executive Assistant. Your goal is to process an incoming notification email.
+    
+    ### Context
+    Today is: {current_context}
+    (Use this to resolve relative dates like "tomorrow" or "next Friday".)
+
+    ### Input Data
+    Subject: "{subject}"
+    Body: "{body[:2000]}" 
+
+    ### Tasks
+    1. **Summarize**: Create a crisp, 5-10 word status update (e.g., "Amazon package arriving tomorrow").
+    2. **Extract Event**: Check if this notification implies a calendar event (e.g., a flight, a webinar, a bill due date).
+       - If a date is mentioned for a future event, extract it.
+       - Use business logic (e.g., "Dinner" ~ 7 PM, "Meeting" ~ 9 AM-5 PM) if time is ambiguous.
+
+    ### Output Format (Strict JSON Only)
+    {{
+        "summary": "The 5-10 word summary string",
+        "event_found": true/false,
+        "event_date": "YYYY-MM-DDTHH:MM:SS" or null,
+        "reasoning": "Brief explanation of date calculation"
+    }}
+    """
+
+    summary = llm_call(prompt).strip()
+
+    try:
+        # Clean potential markdown
+        clean_text = summary.replace("```json", "").replace("```", "").strip()
+        data = json.loads(clean_text)
+        
+        return {
+            "summary": data.get("summary", "No summary available"),
+            "event_found": data.get("event_found", False),
+            "event_date": data.get("event_date"), # Will be None (null) if no event
+            "original_subject": subject
+        }
+        
+    except json.JSONDecodeError:
+        # Fallback if LLM fails
+        return {
+            "summary": subject, # Fallback to subject line
+            "event_found": False,
+            "event_date": None,
+            "original_subject": subject
+        }
+    
+
+@traceable(name="draft_reply_generation")
+def generate_reply_json(
+    sender: str,
+    subject: str,
+    body: str,
+    calendar_context: str,
+    preferences: dict
+):
+    prompt = f"""
+    You are a professional Email Assistant for Sanjay Sanapala.
+
+    Sender: {sender}
+    Subject: {subject}
+    Body: {body}
+
+    Calendar Context:
+    {calendar_context}
+
+    User Preferences:
+    {preferences}
+
+    Return STRICT JSON ONLY:
+    {{
+      "To": "{sender}",
+      "Subject": "Re: {subject}",
+      "Body": "Professional reply"
+    }}
+    """
+
+    response = llm_call(prompt)
+
+    if not response or not response.strip():
+        raise ValueError("LLM returned empty response")
+
+    clean = (
+        response
+        .replace("```json", "")
+        .replace("```", "")
+        .strip()
+    )
+
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Invalid JSON from LLM.\nRaw response:\n{response}"
+        ) from e
