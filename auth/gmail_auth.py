@@ -41,5 +41,3 @@ def get_gmail_service():
 
     return build('gmail', 'v1', credentials=creds)
 
-service = get_gmail_service()
-print("✅ Gmail service authenticated")
