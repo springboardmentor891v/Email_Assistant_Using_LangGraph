@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Email Assistant{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <!-- Welcome Section -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">
+            Welcome back, {{ user_name }}!
+        </h1>
+        <p class="text-gray-600 mt-2">Here's what's happening with your emails today.</p>
+    </div>
+
+    <!-- Error Message -->
+    {% if error %}
+    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+        <i class="fas fa-exclamation-circle mr-2"></i>
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <!-- Unread Emails Card -->
+        <div class="bg-white rounded-xl shadow-md p-6 card-hover border-l-4 border-blue-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm font-medium">Unread Emails</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-2">{{ unread_count }}</p>
+                </div>
+                <div class="p-3 bg-blue-100 rounded-lg">
+                    <i class="fas fa-envelope text-2xl text-blue-600"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Requires Response Card -->
+        <div class="bg-white rounded-xl shadow-md p-6 card-hover border-l-4 border-purple-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm font-medium">Require Response</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-2">{{ respond_count }}</p>
+                </div>
+                <div class="p-3 bg-purple-100 rounded-lg">
+                    <i class="fas fa-reply text-2xl text-purple-600"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upcoming Events Card -->
+        <div class="bg-white rounded-xl shadow-md p-6 card-hover border-l-4 border-green-500">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-gray-500 text-sm font-medium">Upcoming Events</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-2">{{ upcoming_events_count }}</p>
+                </div>
+                <div class="p-3 bg-green-100 rounded-lg">
+                    <i class="fas fa-calendar text-2xl text-green-600"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Summary Section -->
+    {% if email_summary %}
+    <div class="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6 mb-8 border border-purple-200">
+        <div class="flex items-start space-x-4">
+            <div class="p-3 bg-white rounded-lg shadow-sm">
+                <i class="fas fa-robot text-2xl text-purple-600"></i>
+            </div>
+            <div class="flex-1">
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">
+                    AI Email Summary
+                </h3>
+                <p class="text-gray-700 leading-relaxed">{{ email_summary }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <a href="{{ url_for('dashboard.run_triage') }}"
+            class="btn-primary text-white px-6 py-3 rounded-lg text-center font-medium shadow-lg">
+            <i class="fas fa-magic mr-2"></i>
+            Run Email Triage
+        </a>
+        <a href="{{ url_for('chat.chat_interface') }}"
+            class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg text-center font-medium shadow-lg transition">
+            <i class="fas fa-comments mr-2"></i>
+            Open Chat Assistant
+        </a>
+        <a href="{{ url_for('emails.email_list') }}"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg text-center font-medium shadow-lg transition">
+            <i class="fas fa-inbox mr-2"></i>
+            View All Emails
+        </a>
+        <a href="{{ url_for('emails.email_list', filter='unread') }}"
+            class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg text-center font-medium shadow-lg transition">
+            <i class="fas fa-envelope-open mr-2"></i>
+            Unread Only
+        </a>
+    </div>
+
+    <!-- Two Column Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Recent Emails -->
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                <i class="fas fa-inbox mr-2 text-blue-600"></i>
+                Recent Emails
+            </h2>
+
+            {% if recent_emails %}
+            <div class="space-y-3">
+                {% for email in recent_emails %}
+                <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition cursor-pointer">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-900">{{ email.sender }}</p>
+                            <p class="text-sm text-gray-600 mt-1">{{ email.subject or 'No subject' }}</p>
+                            <p class="text-xs text-gray-500 mt-2">
+                                {{ email.snippet[:100] }}{% if email.snippet|length > 100 %}...{% endif %}
+                            </p>
+                        </div>
+                        <a href="{{ url_for('emails.email_detail', email_id=email.id) }}"
+                            class="text-blue-600 hover:text-blue-800 ml-3">
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 text-center py-8">No recent emails</p>
+            {% endif %}
+
+            <div class="mt-4 text-center">
+                <a href="{{ url_for('emails.email_list') }}" class="text-blue-600 hover:text-blue-800 font-medium">
+                    View all emails →
+                </a>
+            </div>
+        </div>
+
+        <!-- Upcoming Events -->
+        <div class="bg-white rounded-xl shadow-md p-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-4 flex items-center">
+                <i class="fas fa-calendar-alt mr-2 text-green-600"></i>
+                Upcoming Events
+            </h2>
+
+            {% if upcoming_events %}
+            <div class="space-y-3">
+                {% for event in upcoming_events %}
+                <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition">
+                    <div class="flex items-start space-x-3">
+                        <div class="p-2 bg-green-100 rounded-lg">
+                            <i class="fas fa-calendar text-green-600"></i>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium text-gray-900">{{ event.title }}</p>
+                            <p class="text-sm text-gray-600 mt-1">
+                                <i class="far fa-clock mr-1"></i>
+                                {{ event.date }} at {{ event.time }}
+                            </p>
+                            {% if event.location %}
+                            <p class="text-xs text-gray-500 mt-1">
+                                <i class="fas fa-map-marker-alt mr-1"></i>
+                                {{ event.location }}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 text-center py-8">No upcoming events</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

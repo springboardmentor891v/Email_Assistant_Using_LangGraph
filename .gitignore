@@ -16,6 +16,16 @@ __pycache__/
 # Database
 *.db-journal
 
+# Flask Session
+flask_session/
+instance/
+
+# Archive (development files)
+archive/
+
+# Temporary files
+RESTRUCTURING_PLAN.md
+
 # IDE
 .vscode/
 .idea/

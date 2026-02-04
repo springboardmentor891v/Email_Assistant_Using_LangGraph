@@ -36,6 +36,15 @@ def learn_from_feedback(feedback_text):
     return ""
 
 def traige_email(email_text: str) -> str:
+    """
+    Triage email using AI with error handling.
+    
+    Args:
+        email_text: The formatted email text
+    
+    Returns:
+        Category: IGNORE, NOTIFY, or RESPOND
+    """
     prompt = f"""
     You are an expert AI Executive Assistant.
     Your goal is to triage incoming emails into specific category
@@ -53,9 +62,20 @@ def traige_email(email_text: str) -> str:
     Email:
     {email_text}
 
-    Only return the category.
+    Only return the category as JSON: {{"category": "IGNORE" or "NOTIFY" or "RESPOND"}}
     """
-    return llm_call(prompt)
+    
+    try:
+        response = llm_call(prompt)
+        # Parse JSON response
+        import json
+        data = json.loads(response)
+        return data.get("category", "IGNORE")
+    except Exception as e:
+        print(f"❌ Error during triage: {e}")
+        print("⚠️  Defaulting to IGNORE due to error")
+        return "IGNORE"  # Safe default - won't send unwanted emails
+
 
 from email.mime.text import MIMEText
 import json
