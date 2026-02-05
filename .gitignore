@@ -1,6 +1,6 @@
+token.json
 token_gmail.json
 token_calendar.json
 credentials.json
-agent_memory.db
-__pycache__/
 .env
+__pycache__/
