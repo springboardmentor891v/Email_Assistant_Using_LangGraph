@@ -10,88 +10,194 @@ gmail_service = build('gmail', 'v1', credentials=creds)
 
 # ---------------- Calendar Tools
 import datetime
+from datetime import timedelta
+import pytz
+
+USER_TIMEZONE = pytz.timezone("Asia/Kolkata") 
+
+def localize_time(time_str):
+    """
+    Parses a time string. 
+    - If it has a timezone (e.g. Z or +05:30), keeps it.
+    - If it is NAIVE (e.g. 14:00), assumes it is USER_TIMEZONE (IST).
+    Returns an ISO 8601 string that Google Calendar accepts.
+    """
+    if not time_str:
+        return None
+        
+    clean_str = time_str.replace('"', '').replace("'", "").strip()
+    
+    # 1. Parse string to datetime object
+    try:
+        # Try ISO format first (e.g. 2026-02-06T14:00:00)
+        dt_obj = datetime.datetime.fromisoformat(clean_str.replace('Z', '+00:00'))
+    except ValueError:
+        try:
+            # Fallback for "Space" separator (e.g. 2026-02-06 14:00:00)
+            dt_obj = datetime.datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            print(f"❌ Date Parsing Error: Could not parse '{clean_str}'")
+            return None
+
+    # 2. Assign Timezone
+    if dt_obj.tzinfo is None:
+        # CRITICAL FIX: Treat naive time as LOCAL (IST), not UTC
+        dt_aware = USER_TIMEZONE.localize(dt_obj)
+        print(f"   ℹ️  Assumed Local Time ({USER_TIMEZONE}): {dt_aware}")
+    else:
+        # It already has a timezone, leave it alone
+        dt_aware = dt_obj
+
+    # 3. Return as ISO format (Google handles offsets like +05:30 perfectly fine)
+    return dt_aware.isoformat()
 
 def ensure_timezone(iso_time):
-    """Helper to ensure time string ends with Z if no offset exists."""
-    if not iso_time.endswith('Z') and '+' not in iso_time[-6:]:
+    """Ensures time string has a timezone offset. Defaults to UTC (Z) if missing."""
+    if not iso_time: return None
+    if not iso_time.endswith('Z') and '+' not in iso_time[-6:] and '-' not in iso_time[-6:]:
         return iso_time + 'Z'
     return iso_time
 
-def check_availability(service, start_time_iso):
+def get_events_in_range(service, start_iso, end_iso):
+    """Helper to fetch raw events between two times."""
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=start_iso,
+        timeMax=end_iso,
+        singleEvents=True,
+        orderBy='startTime'
+    ).execute()
+    return events_result.get('items', [])
+
+def check_availability(service, start_time_str, duration_minutes=60):
     """
-    Checks availability and returns the conflicting event object if busy.
+    Checks if a specific slot is free using localized time logic.
     """
-    # 1. Fix Timezone (Prevents 400 Error)
-    start_time_iso = ensure_timezone(start_time_iso)
-
-    # 2. Calculate End Time
-    start = datetime.datetime.fromisoformat(start_time_iso.replace('Z', '+00:00'))
-    end = start + datetime.timedelta(hours=1)
-    end_time_iso = end.isoformat()
-    
-    # Ensure end time also has Z if needed
-    end_time_iso = ensure_timezone(end_time_iso)
-
-    try:
-        events_result = service.events().list(
-            calendarId='primary',
-            timeMin=start_time_iso,
-            timeMax=end_time_iso,
-            singleEvents=True
-        ).execute()
-
-        events = events_result.get('items', [])
-        
-        # 3. Return Dictionary (Required for 'Replace' logic)
-        if events:
-            return {"status": "BUSY", "event": events[0]}
-        
-        return {"status": "FREE", "event": None}
-        
-    except Exception as e:
-        print(f"Calendar API Check Error: {e}")
+    # 1. Localize input to User Timezone (IST)
+    start_iso = localize_time(start_time_str)
+    if not start_iso:
         return {"status": "ERROR", "event": None}
 
-def add_event(service, summary, start_time_iso):
-    """Adds an event to the primary calendar."""
-    # 1. Fix Timezone
-    start_time_iso = ensure_timezone(start_time_iso)
+    start_dt = datetime.datetime.fromisoformat(start_iso)
+    end_dt = start_dt + timedelta(minutes=duration_minutes)
     
-    start = datetime.datetime.fromisoformat(start_time_iso.replace('Z', '+00:00'))
-    end = start + datetime.timedelta(hours=1)
-    end_time_iso = end.isoformat()
+    # 2. Query Google Calendar
+    events = get_events_in_range(service, start_dt.isoformat(), end_dt.isoformat())
     
-    # Ensure end time also has Z
-    end_time_iso = ensure_timezone(end_time_iso)
+    if events:
+        return {"status": "BUSY", "event": events[0]}
+    
+    return {"status": "FREE", "event": None}
+
+def find_free_slots(service, anchor_time_str, duration_minutes=30, num_slots=3):
+    """
+    Scans for free slots starting from anchor_time using localized logic.
+    """
+    # 1. Localize anchor time
+    anchor_iso = localize_time(anchor_time_str)
+    if not anchor_iso:
+        # Fallback to 'now' if anchor is invalid
+        start_dt = datetime.datetime.now(USER_TIMEZONE)
+    else:
+        start_dt = datetime.datetime.fromisoformat(anchor_iso)
+    
+    # 2. Ensure we don't start in the past
+    now = datetime.datetime.now(USER_TIMEZONE)
+    if start_dt < now:
+        start_dt = now
+
+    # 3. Round up to next 30 min interval
+    if start_dt.minute % 30 != 0 or start_dt.second != 0:
+        minutes_to_add = 30 - (start_dt.minute % 30)
+        start_dt += timedelta(minutes=minutes_to_add)
+        start_dt = start_dt.replace(second=0, microsecond=0)
+
+    found_slots = []
+    search_end = start_dt + timedelta(days=3)
+    
+    # 4. Fetch all events in search window
+    all_events = get_events_in_range(service, start_dt.isoformat(), search_end.isoformat())
+    
+    # 5. Parse busy times (handling timezone consistency)
+    busy_times = []
+    for e in all_events:
+        if 'dateTime' not in e['start']: continue # Skip all-day events
+        
+        # Google returns ISO strings with offsets; fromisoformat parses them correctly
+        e_start = datetime.datetime.fromisoformat(e['start']['dateTime'])
+        e_end = datetime.datetime.fromisoformat(e['end']['dateTime'])
+        busy_times.append((e_start, e_end))
+
+    # 6. Iterate slots
+    current_slot = start_dt
+    while len(found_slots) < num_slots and current_slot < search_end:
+        slot_end = current_slot + timedelta(minutes=duration_minutes)
+        
+        # Optional: Working Hours Filter (e.g., 9 AM - 6 PM)
+        # if not (9 <= current_slot.hour < 18):
+        #     # Skip to next day 9 AM
+        #     current_slot = (current_slot + timedelta(days=1)).replace(hour=9, minute=0)
+        #     continue
+
+        is_conflict = False
+        for b_start, b_end in busy_times:
+            # Overlap check
+            if current_slot < b_end and slot_end > b_start:
+                is_conflict = True
+                break
+        
+        if not is_conflict:
+            # Format: "Friday, Feb 06 at 02:00 PM"
+            nice_format = current_slot.strftime("%A, %b %d at %I:%M %p")
+            found_slots.append(nice_format)
+            # Add buffer (15 mins) before next suggestion
+            current_slot = slot_end + timedelta(minutes=15)
+        else:
+            # If busy, try next 30 min increment
+            current_slot += timedelta(minutes=30)
+
+    return found_slots
+
+def add_event(service, summary, start_time_str, duration_minutes=60):
+    start_iso = localize_time(start_time_str)
+    if not start_iso:
+        return "Error: Invalid Start Time Format"
+
+    start_dt = datetime.datetime.fromisoformat(start_iso)
+    end_dt = start_dt + timedelta(minutes=duration_minutes)
+    
+    end_iso = end_dt.isoformat()
+
+    print(f"DEBUG: Creating Event -> {summary}")
+    print(f"DEBUG: Start: {start_iso}") 
+    print(f"DEBUG: End:   {end_iso}")
 
     event_body = {
         'summary': summary,
-        'start': {'dateTime': start_time_iso},
-        'end': {'dateTime': end_time_iso}
+        'start': {'dateTime': start_iso},
+        'end': {'dateTime': end_iso},
     }
     
     try:
         event = service.events().insert(calendarId='primary', body=event_body).execute()
-        return f"Success: Event created at {event.get('htmlLink')}"
+        link = event.get('htmlLink')
+        print(f"✅ Event Created Successfully: {link}")
+        return f"Success: Event created at {link}"
     except Exception as e:
-        return f"Error creating event: {e}"
+        error_msg = f"❌ API Error creating event: {str(e)}"
+        print(error_msg)
+        return error_msg
+
 
 def delete_event(service, event_id):
-    """Deletes an event by ID."""
     try:
-        # Fixed typo: .delet -> .delete
         service.events().delete(calendarId='primary', eventId=event_id).execute()
-        print(f"🗑️ Deleted conflicting event (ID: {event_id})")
         return True
     except Exception as e:
         print(f"Error deleting event: {e}")
         return False
 
-
-
-
 # -------------------- Email tools
-
 import base64
 from email.mime.text import MIMEText
 from googleapiclient.errors import HttpError

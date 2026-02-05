@@ -1,7 +1,7 @@
 import json
 from src.gemini import llm_call
-# from src.groq_llm import llm_call_1
-from src.tools import add_event, delete_event, send_email, check_availability
+from src.groq_llm import llm_call_1
+from src.tools import add_event, delete_event, send_email, check_availability, find_free_slots
 from src.db import MemoryManager
 from datetime import datetime
 from langsmith import traceable
@@ -28,7 +28,7 @@ def learn_from_feedback(feedback_text):
     
     try:
         # We assume llm_call is available or use self.client.generate_content
-        response = llm_call(prompt) 
+        response = llm_call_1(prompt)
         data = json.loads(response.replace("```json", "").replace("```", ""))
         
         if data["key"] != "NONE":
@@ -59,159 +59,193 @@ def traige_email(email_text: str) -> str:
 
     Only return the category.
     """
-    return llm_call(prompt)
+    return llm_call_1(prompt)
 
-from email.mime.text import MIMEText
-import json
 from datetime import datetime as dt
 
 
-def create_draft_reply(gmail_service, calendar_service, sender: str, subject: str, body: str) -> str:
+import json
+import datetime as dt
 
-    # Extract Event Time ---
-    now = dt.now()
-    # We provide Day Name and Time so it understands "Next Friday" or "Tonight"
+def create_draft_reply(gmail_service, calendar_service, sender: str, subject: str, body: str) -> str:
+    
+    now = dt.datetime.now()
     current_context = now.strftime("%A, %B %d, %Y at %H:%M") 
     
-    time_prompt = f"""
+    # --- STEP 1: EXTRACT TIME & DURATION ---
+    # We ask for JSON to capture duration (e.g., "30 mins", "2 hours")
+    extraction_prompt = f"""
     ### Role
-    You are an expert Executive Assistant. Your task is to extract the **Event Start Time** from an email.
+    You are an Executive Scheduler. Extract event details from the email below.
 
-    ### Current Context (Anchor Time)
+    ### Context
     Today is: {current_context}
-    (Use this anchor to resolve relative dates like "tomorrow", "next Friday", or "in 2 days")
 
-    ### Extraction Rules
-    1. **Year Inference:** If the email mentions a date (e.g., "Jan 5") that has already passed relative to 'Today', assume it refers to the **next occurrence** (next year).
-    2. **Time Inference:** - If a time is mentioned without AM/PM (e.g., "at 2"), infer the most likely time based on context (e.g., business meetings are usually 2 PM, dinner is 7 PM).
-       - If no specific time is found but a date is present, default to 09:00:00 (Start of day) but mark it as approximate.
-    3. **Timezones:** If a timezone is specified (EST, IST, GMT), convert it to UTC if possible, otherwise keep the local time and ignore the offset.
+    ### Rules
+    1. **Start Time:** ISO 8601 format. If date is present but time missing, assume 09:00:00.
+    2. **Duration:** Extract duration in **minutes** (integer). 
+       - Default to 60 if not specified. 
+       - "Quick chat" = 30 mins. "Lunch" = 60 mins.
+    3. **Timezone:** Detect timezone (e.g., EST, IST) if mentioned.
 
     ### Email Body
     "{body}"
 
-    ### Output Format
-    Return ONLY the ISO string or 'NONE'. No markdown, no quotes.
+    ### Output Format (Strict JSON)
+    {{
+        "start_time": "YYYY-MM-DDTHH:MM:SS" or null,
+        "duration_minutes": 60,
+        "timezone_context": "Detected timezone or None"
+    }}
     """
-    event_time = llm_call(time_prompt).strip().replace('"', '').replace("'", "")
     
-    # Check Availability
-    calendar_context = "No specific time mentioned in email."
+    try:
+        raw_extraction = llm_call_1(extraction_prompt).strip().replace('```json', '').replace('```', '')
+        event_data = json.loads(raw_extraction)
+        
+        event_time = event_data.get("start_time")
+        duration = event_data.get("duration_minutes", 60)
+        
+    except Exception as e:
+        print(f"Extraction Error: {e}")
+        event_time = None
+        duration = 60
+
+    # --- STEP 2: CHECK AVAILABILITY & GENERATE CONTEXT ---
+    calendar_context = "No specific time mentioned."
     conflict_event = None
     is_free = True
-    event_already_scheduled = False # Flag to prevent double-booking on 'replace'
+    suggested_slots = []
+    
+    # Flag to determine if we should allow auto-booking
+    can_auto_book = False 
 
-    if event_time != "NONE" and "T" in event_time:
-        print(f"\n📅 Detected Event Time: {event_time}")
-        availability = check_availability(calendar_service, event_time)
+    if event_time:
+        print(f"\n📅 Requested: {event_time} ({duration} mins)")
+        
+        # Check specific slot
+        availability = check_availability(calendar_service, event_time, duration)
         
         if availability["status"] == "BUSY":
             is_free = False
             conflict_event = availability["event"]
-            calendar_context = f"WARNING: You are BUSY at this time. Conflicting Event: '{conflict_event['summary']}' (ID: {conflict_event['id']})."
+            can_auto_book = False
+            
+            print(f"❌ Conflict detected: {conflict_event['summary']}")
+            
+            # PROACTIVE: Find alternatives
+            suggested_slots = find_free_slots(calendar_service, event_time, duration)
+            slots_str = ", ".join(suggested_slots)
+            
+            calendar_context = (
+                f"STATUS: BUSY at requested time ({event_time}). "
+                f"Conflict: '{conflict_event['summary']}'. "
+                f"SUGGESTED ALTERNATIVES found in calendar: {slots_str}. "
+                "Action: Politely decline the specific time and offer the alternatives."
+            )
         else:
-            calendar_context = "You are FREE at this time."
-
+            is_free = True
+            can_auto_book = True
+            calendar_context = (
+                f"STATUS: FREE at requested time ({event_time}). "
+                "Action: You can accept this meeting."
+            )
     
+    # --- STEP 3: DRAFTING EMAIL ---
     user_preferences = memory.get_all_preferences()
     current_feedback = ""
 
     while True:
-        prompt = f"""
-        You are a professional Email Assistant for Sanjay Sanapala.
-        Your goal is to write a professional email reply.
+        draft_prompt = f"""
+        You are an Email Assistant. Write a reply based on the context.
 
-        ### INPUT DATA:
-        - Sender: {sender}
-        - Original Subject: {subject}
-        - Original Body: {body}
+        ### EMAIL DATA
+        Sender: {sender}
+        Subject: {subject}
+        Body: {body}
 
-        ### CALENDAR CONTEXT:
+        ### CALENDAR INTELLIGENCE
         {calendar_context}
+        (If alternatives are suggested, list them clearly in the email body).
 
-        ### LONG-TERM MEMORY (USER PREFERENCES):
+        ### PREFERENCES
         {user_preferences}
         
-        ### USER FEEDBACK / ADJUSTMENTS:
-        {current_feedback if current_feedback else "None (Draft the initial reply)"}
+        ### USER FEEDBACK
+        {current_feedback}
 
-        ### GUIDELINES:
-        1. **Tone:** Professional, direct, and polite.
-        2. **Structure:** Greeting -> Main Point -> Call to Action -> Sign off.
-        3. **Constraint:** Return strictly valid JSON.
-
-        ### OUTPUT FORMAT (JSON ONLY):
+        ### OUTPUT JSON
         {{
             "To": "{sender}",
-            "Subject": "Re: {subject} (or a better subject)",
-            "Body": "The full email body text here..."
+            "Subject": "Re: {subject}",
+            "Body": "Email body..."
         }}
         """
 
         print("\n--- Generating Draft... ---")
-        
         try:
-            response_json = llm_call(prompt)
+            response_json = llm_call_1(draft_prompt).replace('```json', '').replace('```', '')
             reply_data = json.loads(response_json)
-        except json.JSONDecodeError:
-            print("Error: LLM did not return valid JSON. Retrying...")
+        except Exception:
+            print("Error parsing draft JSON. Retrying...")
             continue
 
         print(f"\nDRAFT PREVIEW:\nTo: {reply_data['To']}\nSubject: {reply_data['Subject']}\nBody:\n{reply_data['Body']}\n")
         
-        user_choice = input("Action (yes / no / replace / [type feedback]): ").strip().lower()
+        # --- STEP 4: USER ACTION ---
+        prompt_text = "Action (yes / no / replace / [feedback]): "
+        if not can_auto_book and event_time:
+             prompt_text = "Action (yes [send only] / no / replace / [feedback]): "
+             
+        user_choice = input(prompt_text).strip().lower()
 
+        # 1. SEND EMAIL
         if user_choice in ["yes", "y"]:
-            if event_time != "NONE" and is_free and not event_already_scheduled:
-                print(f"📅 Adding event to calendar...")
-                # Assuming you passed calendar_tools to this function
-                add_event(calendar_service, f"Meeting with {sender}", event_time)
-
-            # B. Send Logic
+            if can_auto_book and event_time and event_time != "NONE":
+                print(f"📅 Booking event: '{subject}' for {duration} mins...")
+                result = add_event(
+                    calendar_service, 
+                    f"Meeting: {sender}", 
+                    event_time,           
+                    duration              
+                )
+                print(f"Calendar Result: {result}")
+            
+            elif not can_auto_book and event_time:
+                print("ℹ️ Sending email proposing times (Calendar NOT booked - waiting for their reply).")
+            
             print(f"📨 Sending email to {reply_data['To']}...")
-            
             send_email(
-                service=gmail_service,
-                recipient=reply_data['To'], 
-                subject=reply_data['Subject'], 
-                body=reply_data['Body']
+                gmail_service, 
+                reply_data['To'], 
+                reply_data['Subject'], 
+                reply_data['Body']
             )
+            return "Success: Email Sent."
 
-            return "Success: Email Sent & Calendar Updated."
-        # --- 2. HANDLE REPLACEMENT (REPLACE) ---
+        # 2. REPLACE CONFLICT
         elif "replace" in user_choice:
-            # Check if there is actually a conflict to replace
             if conflict_event:
-                print(f"🔄 Replacing conflicting event: '{conflict_event['summary']}'...")
-                
+                print(f"🔄 Replacing '{conflict_event['summary']}'...")
                 delete_event(calendar_service, conflict_event['id'])
-                add_event(calendar_service, f"Meeting with {sender}", event_time)
                 
-                event_already_scheduled = True 
-                is_free = True 
-                conflict_event = None
+                # Now add the new event
+                add_event(calendar_service, f"Meeting with {sender}", event_time, duration)
                 
-                calendar_context = "Availability: FREE (User manually cleared the previous conflict). You MUST ACCEPT the invitation now."
-                current_feedback += " I have cleared the calendar conflict. Rewrite the email to ACCEPT the invitation."
-                
-                print("Event swapped. Regenerating draft with acceptance...")
-            
+                # Update context for the loop (so we can regenerate the email saying "Yes")
+                calendar_context = "STATUS: FREE (User cleared conflict). You MUST ACCEPT the invitation now."
+                current_feedback += " Conflict resolved. Rewrite email to Accept."
+                can_auto_book = False # Already booked manually above, don't double book
             else:
-                print("⚠️ No conflicting event found to replace. (Calendar is already free or no time detected).")
+                print("⚠️ No conflict to replace.")
 
-        # --- 3. HANDLE CANCELLATION (NO) ---
+        # 3. CANCEL
         elif user_choice in ["no", "n"]:
-            print("Operation cancelled.")
             return "Cancelled."
 
-        # --- 4. HANDLE FEEDBACK (EVERYTHING ELSE) ---
+        # 4. FEEDBACK LOOP
         else:
-            print("Refining draft based on feedback...")
-            learning_result = learn_from_feedback(user_choice)
-            if learning_result:
-                print(f"{learning_result}")
-                user_preferences = memory.get_all_preferences()
-            current_feedback += f"\n- User requested change: {user_choice}"
+            current_feedback += f"\n- User request: {user_choice}"
 
 @traceable(name="notify")
 def process_notify(sender: str, subject: str, body: str):
@@ -247,7 +281,7 @@ def process_notify(sender: str, subject: str, body: str):
     }}
     """
 
-    summary = llm_call(prompt).strip()
+    summary = llm_call_1(prompt).strip()
 
     try:
         # Clean potential markdown
@@ -300,7 +334,7 @@ def generate_reply_json(
     }}
     """
 
-    response = llm_call(prompt)
+    response = llm_call_1(prompt)
 
     if not response or not response.strip():
         raise ValueError("LLM returned empty response")
