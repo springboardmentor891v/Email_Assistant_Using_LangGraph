@@ -3,14 +3,14 @@ from app.agent.states import get_state_schema
 from app.core.llm import load_llm
 from app.core.prompt import build_email_prompt
 
-
 def build_email_graph(user_prompt: str, service, calendar_service):
     from langgraph.graph import StateGraph, END
+    from langgraph.checkpoint.memory import MemorySaver
 
     EmailState = get_state_schema()
     llm = load_llm()
     prompt = build_email_prompt(user_prompt)
-
+    memory = MemorySaver()
     graph = StateGraph(EmailState)
 
     graph.add_node("ai_decision", lambda s: ai_decision_node(s, prompt, llm))
@@ -20,8 +20,10 @@ def build_email_graph(user_prompt: str, service, calendar_service):
 
     graph.set_entry_point("ai_decision")
 
+    # FIX: Robust router for Streamlit
     def router(state):
-        return state.get("decision", {}).get("action", "reply")
+        decision = state.get("decision", {})
+        return decision.get("action", "reply")
 
     graph.add_conditional_edges(
         "ai_decision",
@@ -37,4 +39,8 @@ def build_email_graph(user_prompt: str, service, calendar_service):
     graph.add_edge("send", END)
     graph.add_edge("calendar", END)
 
-    return graph.compile()
+    workflow = graph.compile(
+        checkpointer=memory,
+        interrupt_before=["human_confirm"] 
+    )
+    return workflow

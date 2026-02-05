@@ -11,10 +11,11 @@ def load_llm():
     if not GOOGLE_API_KEY:
         raise ValueError("Please set GOOGLE_API_KEY or GEMINI_API_KEY in .env")
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",   # ✅ WORKING MODEL
-        temperature=0,
-        google_api_key=GOOGLE_API_KEY
+    model = ChatGoogleGenerativeAI(
+        model="models/gemini-1.0-pro",   # ✅ VALID + STABLE
+        google_api_key=GOOGLE_API_KEY,
+        temperature=0.3,
+        max_retries=3
     )
 
-    return llm
+    return model

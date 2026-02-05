@@ -21,20 +21,28 @@ CRITICAL RULES (MUST FOLLOW):
 3. Grammar mistakes, short emails, or informal language
    do NOT mean an email should be ignored.
 
-INTENT RULES (VERY IMPORTANT):
-- If the subject OR body mentions ANY of the following:
-  meeting, schedule, call, discussion, interview, appointment
+INTENT CLASSIFICATION RULES:
 
-  → You MUST NOT return "ignore".
+1. PROMOTIONAL EMAIL (IGNORE):
+- Marketing, ads, newsletters, bootcamps, courses
+- Free offers like mock interviews, free sessions, discounts
+- Generic senders, no real recruiter or company context
+- Language such as: "FREE", "Enroll now", "Limited offer"
 
-- Emails asking for meetings are ALWAYS genuine.
-- Promotions, newsletters, and marketing emails
-  are the ONLY emails you should ignore.
+2. GENUINE INTERVIEW / MEETING EMAIL (DO NOT IGNORE):
+- Mentions a real company, recruiter, or interviewer
+- Refers to interview rounds, hiring process, next steps
+- Asks for availability, confirmation, or scheduling
 
-ACTION DECISION:
-- Use "schedule" ONLY if date and time are clearly mentioned.
-- Otherwise use "reply" and ask for availability.
-- If unsure, ALWAYS choose "reply".
+3. If the word "interview" appears:
+- IGNORE if it is clearly promotional or marketing-related
+- REPLY if it refers to an actual hiring or selection process
+
+ACTION DECISION RULES:
+- Use "schedule" ONLY if a clear date AND time are mentioned.
+- Use "reply" for genuine interviews or meetings.
+- Use "ignore" ONLY for promotional or marketing emails.
+- If uncertain, ALWAYS choose "reply".
 
 OUTPUT JSON SCHEMA (NO EXCEPTIONS):
 {{{{ 
@@ -52,6 +60,7 @@ REPLY STYLE RULES:
 - Start replies with a short thank-you.
 - Be polite and professional.
 """
+
 
     system_msg = SystemMessagePromptTemplate.from_template(system_text)
 

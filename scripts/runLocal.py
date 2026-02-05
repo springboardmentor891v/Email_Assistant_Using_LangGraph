@@ -1,5 +1,9 @@
 from app.core.gmail_client import get_gmail_service
 from app.services.email_runner import run_email_assistant
+import os
+
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_PROJECT"] = "emailAssistantEvaluation"
 
 USER_PROMPT = """
 Reply only to genuine emails.
