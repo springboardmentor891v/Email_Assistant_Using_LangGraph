@@ -1,135 +1,156 @@
 import streamlit as st
 import time
+import re
 from langgraph.types import Command
 from app.core.gmail_client import (
     get_gmail_service, fetch_unread_emails, extract_email, 
-    clean_email_body, mark_read, get_email_counts
+    clean_email_body, mark_read
 )
 from app.agent.graph import build_email_graph
+from memoryStore import init_memory, get_sender_history, save_email_memory
 
-# --- PAGE CONFIG ---
+# --- 1. SETUP ---
+init_memory()
 st.set_page_config(page_title="AI Email Assistant", layout="wide")
 
-# --- 1. LOGIN / IDENTITY ---
 if "user_email_id" not in st.session_state:
     st.title("📧 AI Email Assistant")
-    email_in = st.text_input("Enter your Gmail address to start:")
-    if st.button("Connect Account"):
-        if email_in:
-            st.session_state.user_email_id = email_in
-            st.rerun()
+    e_in = st.text_input("Enter Gmail Address:")
+    if st.button("Connect"):
+        st.session_state.user_email_id = e_in
+        st.rerun()
     st.stop()
 
-# --- 2. INIT SERVICES ---
-@st.cache_resource
-def init_services(email):
-    # Returns (gmail_service, calendar_service)
-    return get_gmail_service(email)
+service, cal_service = get_gmail_service(st.session_state.user_email_id)
 
-service, calendar_service = init_services(st.session_state.user_email_id)
+# --- 2. FIX: FETCH TOTAL COUNT (4000+) ---
+def get_real_counts(service):
+    profile = service.users().getProfile(userId='me').execute()
+    total_messages = profile.get('messagesTotal', 0)
+    unread_results = service.users().messages().list(userId='me', q="is:unread", maxResults=1).execute()
+    unread_total = unread_results.get('resultSizeEstimate', 0)
+    return unread_total, total_messages - unread_total
 
-# --- 3. SESSION STATE ---
-if "unread_list" not in st.session_state: st.session_state.unread_list = []
-if "selected_msg_id" not in st.session_state: st.session_state.selected_msg_id = None
-if "chat_history" not in st.session_state: st.session_state.chat_history = []
+def fetch_emails_logic(query=None, show_unread_only=True):
+    base_q = "label:INBOX"
+    if show_unread_only: base_q += " is:unread"
+    final_q = f"{base_q} {query}" if query else base_q
+    results = service.users().messages().list(userId='me', q=final_q, maxResults=15).execute()
+    messages = results.get('messages', [])
+    full_data = []
+    for m in messages:
+        msg = service.users().messages().get(userId='me', id=m['id']).execute()
+        full_data.append(msg)
+    return full_data
 
-# --- 4. SIDEBAR ---
+# --- 3. SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Settings")
-    st.write(f"User: **{st.session_state.user_email_id}**")
-    persona = st.selectbox("Agent Persona", ["Professional Assistant", "Friendly Support"])
-    
-    if st.button("📥 Refresh Unread", use_container_width=True):
-        # Specifically fetch unread to avoid full inbox clutter
-        st.session_state.unread_list = fetch_unread_emails(service, 10)
+    st.header("Settings")
+    view_opt = st.radio("Display:", ["Unread Only", "All Mail"])
+    unread_mode = (view_opt == "Unread Only")
+    persona = st.selectbox("Persona", ["Professional Assistant", "Friendly Support"])
+    if st.button("Refresh Inbox", use_container_width=True):
+        st.session_state.unread_list = fetch_emails_logic(show_unread_only=unread_mode)
         st.rerun()
 
-# Build agent
-agent_app = build_email_graph(persona, service, calendar_service)
+agent_app = build_email_graph(persona, service, cal_service)
+left, center, right = st.columns([1.3, 2.4, 1.3])
 
-# --- 5. THREE COLUMN LAYOUT ---
-left, center, right = st.columns([1.2, 2.5, 1.3])
-
-# LEFT: INBOX LIST (Sender & Subject)
+# --- 4. LEFT: INBOX ---
 with left:
-    st.subheader("📨 Unread")
-    if not st.session_state.unread_list:
-        st.info("No unread emails.")
-    else:
-        for msg in st.session_state.unread_list:
-            headers = msg['payload']['headers']
-            subj = next((h['value'] for h in headers if h['name'] == 'Subject'), "No Subject")
-            sndr = next((h['value'] for h in headers if h['name'] == 'From'), "Unknown").split('<')[0].strip()
-            
-            # Use Sender + Subject for clear sidebar labels
-            if st.button(f"👤 {sndr}\n📧 {subj[:25]}...", key=msg['id'], use_container_width=True):
-                st.session_state.selected_msg_id = msg['id']
+    st.subheader("📨 Inbox")
+    s_input = st.text_input("Search", placeholder="Search...", label_visibility="collapsed")
+    if st.button("🔍 Search", use_container_width=True):
+        st.session_state.unread_list = fetch_emails_logic(query=s_input, show_unread_only=unread_mode)
 
-# CENTER: EMAIL VIEWER & SINGLE-ROW TRACE LOGIC
+    st.divider()
+    for msg in st.session_state.get("unread_list", []):
+        subj = next((h['value'] for h in msg['payload']['headers'] if h['name'] == 'Subject'), "No Subject")
+        icon = "🔵" if 'UNREAD' in msg.get('labelIds', []) else "⚪"
+        if st.button(f"{icon} {subj[:25]}...", key=msg['id'], use_container_width=True):
+            st.session_state.selected_msg_id = msg['id']
+            st.rerun()
+
+# --- 5. CENTER: PROCESSOR ---
 with center:
-    st.subheader("📄 Viewer")
-    if m_id := st.session_state.selected_msg_id:
-        # Extract and clean HTML/CSS body
+    st.subheader("📄 Email Processor")
+    if m_id := st.session_state.get("selected_msg_id"):
         subj, sender, raw_body, t_id = extract_email(service, m_id)
-        clean_text = clean_email_body(raw_body)
         
-        st.markdown(f"**From:** `{sender}`")
-        st.markdown(f"**Subject:** `{subj}`")
-        st.text_area("Email Content", clean_text, height=200)
-        
-        # THREAD CONFIG (Crucial for LangSmith single-row grouping)
-        config = {"configurable": {"thread_id": t_id}}
-        res_key = f"res_{m_id}"
-        
-        ai_draft = st.session_state.get(res_key, {}).get("decision", {}).get("reply", "")
-        reply_box = st.text_area("✍️ AI Draft Reply", value=ai_draft, height=150, key=f"box_{m_id}")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("🤖 AI Process", use_container_width=True):
-                try:
-                    # Starts the trace row
-                    state = {"subject": subj, "sender": sender, "body": clean_text, "thread_id": t_id}
-                    st.session_state[res_key] = agent_app.invoke(state, config=config)
-                    st.rerun()
-                except Exception as e:
-                    # Catch 404 or 429 quota errors gracefully
-                    st.error(f"AI Error: {str(e)}")
-        with c2:
-            if st.button("📤 Confirm & Send", type="primary", use_container_width=True):
-                try:
-                    # RESUME: This prevents the 'null' input and multiple rows issue
-                    agent_app.invoke(Command(resume={"final_reply": reply_box}), config=config)
-                    mark_read(service, m_id)
-                    st.success("Thread completed in a single row!")
-                    
-                    # Cleanup local state
-                    st.session_state.unread_list = [e for e in st.session_state.unread_list if e['id'] != m_id]
-                    st.session_state.selected_msg_id = None
-                    time.sleep(1)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Send Error: {str(e)}")
-    else:
-        st.info("Select an unread email to view.")
+        # FIX: DEFENSIVE UNPACKING
+        hist = get_sender_history(sender)
+        with st.container(border=True):
+            st.markdown(f"**Memory for:** `{sender}`")
+            if hist:
+                for row in hist:
+                    # Accessing by index prevents the "unpacking" error
+                    act = row[0] if len(row) > 0 else "Unknown"
+                    ts = row[1] if len(row) > 1 else "Unknown Date"
+                    st.caption(f"🕒 {ts[:16]} - {act.upper()}")
+            else: st.caption("No history in database.")
 
-# RIGHT: INTERACTIVE CHATBOT
+        st.text_area("Content", clean_email_body(raw_body), height=150)
+        res_key = f"res_{m_id}"
+        ai_res = st.session_state.get(res_key, {})
+        ai_draft = ai_res.get("decision", {}).get("reply", "")
+        
+        if ai_res and not ai_draft: st.warning("🤖 Agent is ignoring this message.")
+        
+        reply_box = st.text_area("AI Draft", value=ai_draft, height=150)
+        c1, c2 = st.columns(2)
+        if c1.button("🤖 Generate", use_container_width=True):
+            st.session_state[res_key] = agent_app.invoke({"subject": subj, "sender": sender, "body": raw_body}, config={"configurable": {"thread_id": t_id}})
+            st.rerun()
+        
+        label = "📤 Send" if ai_draft else "👓 Mark as Read"
+        if c2.button(label, type="primary", use_container_width=True):
+            if ai_draft:
+                agent_app.invoke(Command(resume={"final_reply": reply_box}), config={"configurable": {"thread_id": t_id}})
+                save_email_memory(sender, subj, t_id, "replied", reply_box)
+                st.success("✅ Success: Reply Sent!")
+            else:
+                save_email_memory(sender, subj, t_id, "ignored", "No reply")
+                st.info("✅ Success: Marked as Read")
+            
+            mark_read(service, m_id)
+            if unread_mode: st.session_state.unread_list = [e for e in st.session_state.unread_list if e['id'] != m_id]
+            st.session_state.selected_msg_id = None
+            time.sleep(1)
+            st.rerun()
+
+# --- 6. RIGHT: CHATBOT (Count & Process) ---
 with right:
     st.subheader("💬 Assistant")
-    chat_container = st.container(height=400)
-    
-    for role, text in st.session_state.chat_history:
-        chat_container.chat_message(role).write(text)
-    
-    if prompt := st.chat_input("Ask: 'tell me my inbox'"):
-        st.session_state.chat_history.append(("user", prompt))
-        cmd = prompt.lower()
+    if "chat_history" not in st.session_state: st.session_state.chat_history = []
+    chat_box = st.container(height=450)
+    for r, t in st.session_state.chat_history: chat_box.chat_message(r).write(t)
+
+    if chat_in := st.chat_input("Ask: 'how many unread?'"):
+        st.session_state.chat_history.append(("user", chat_in))
+        query = chat_in.lower()
+
+        if any(w in query for w in ["count", "how many", "unread"]):
+            u, r = get_real_counts(service)
+            ans = f"📊 **Inbox Status:**\n- 🔵 Unread: {u}\n- ⚪ Read: {r}\n- 📦 Total: {u+r}"
         
-        # Chatbot logic for metadata counts
-        if any(w in cmd for w in ["tell me", "unread", "draft", "inbox"]):
-            u, r, d = get_email_counts(service)
-            response = (f"📊 **Inbox Status:**\n\n* Unread: {u}\n* Read: {r}\n* Drafts: {d}")
-            st.session_state.chat_history.append(("assistant", response))
-        else:
-            st.session_state.chat_history.append(("assistant", "I can check your mail counts or help process drafts."))
+        elif "process" in query:
+            unreads = fetch_unread_emails(service, 20)
+            if not unreads: ans = "No unread emails found."
+            else:
+                num = re.search(r'\d+', query)
+                limit = len(unreads) if "all" in query else (int(num.group()) if num else 1)
+                limit = min(limit, len(unreads))
+                with st.status(f"Processing {limit} emails...") as status:
+                    for i in range(limit):
+                        m = unreads[i]
+                        s, sndr, b, tid = extract_email(service, m['id'])
+                        agent_app.invoke({"subject": s, "sender": sndr, "body": b}, config={"configurable": {"thread_id": tid}})
+                        save_email_memory(sndr, s, tid, "bulk_processed")
+                        mark_read(service, m['id'])
+                    status.update(label=f"Finished {limit}!", state="complete")
+                ans = f"✅ Processed {limit} emails."
+                st.session_state.unread_list = fetch_emails_logic(show_unread_only=unread_mode)
+        else: ans = "Try: 'How many unread' or 'Process all'."
+        
+        st.session_state.chat_history.append(("assistant", ans))
         st.rerun()

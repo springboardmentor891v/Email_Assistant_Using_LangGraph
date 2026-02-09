@@ -1,3 +1,6 @@
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+
 def load_llm():
     from dotenv import load_dotenv
     import os
@@ -11,11 +14,11 @@ def load_llm():
     if not GOOGLE_API_KEY:
         raise ValueError("Please set GOOGLE_API_KEY or GEMINI_API_KEY in .env")
 
-    model = ChatGoogleGenerativeAI(
-        model="models/gemini-1.0-pro",   # ✅ VALID + STABLE
-        google_api_key=GOOGLE_API_KEY,
-        temperature=0.3,
-        max_retries=3
-    )
+   # Use gemini-2.5-flash for the best balance of quota and availability
+    llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash", 
+    temperature=0, 
+    max_retries=2
+)
 
-    return model
+    return llm
